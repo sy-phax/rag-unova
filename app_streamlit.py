@@ -14,20 +14,57 @@ try:
 except (KeyError, FileNotFoundError):
     BACKEND_URL = "http://localhost:8000"
 
-st.title("Assistant UNOVA: CVC — Chauffage, Ventilation, Qualité de l'air")
+st.set_page_config(page_title="assistant unova")
 
-question = st.text_input("question:")
+st.markdown(
+    """
+    <div style="text-align: center;">
+        <h1>assistant unova</h1>
+        <p style="color: gray; font-size: 1.1em;">
+            chauffage, ventilation, isolation, performance énergétique
+        </p>
+    </div>
+    <hr>
+    """,
+    unsafe_allow_html=True
+)
 
-if st.button("send"):
-    if question:
-        reponse = requests.post(
-            f"{BACKEND_URL}/ask",
-            json={"texte": question}
-        )
-        resultat = reponse.json()
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-        st.write(resultat["reponse"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.write(message["content"])
 
-        st.write("**sources :**")
-        for source in resultat["sources"]:
-            st.write("-", source)
+question = st.chat_input("ask something...")
+
+if question:
+    st.session_state.messages.append({"role": "user", "content": question})
+    with st.chat_message("user"):
+        st.write(question)
+
+    with st.chat_message("assistant"):
+        with st.spinner("searching for an answer..."):
+            try:
+                reponse = requests.post(
+                    f"{BACKEND_URL}/ask",
+                    json={"texte": question},
+                    timeout=30
+                )
+                resultat = reponse.json()
+                texte_reponse = resultat["reponse"]
+
+                sources_texte = "\n\n**sources :**\n"
+                for s in resultat["sources"]:
+                    sources_texte += f"- [{s['fichier']} (page {s['page']})]({s['url']}#page={s['page']})\n"
+
+                st.write(texte_reponse + sources_texte)
+
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": texte_reponse + sources_texte
+                })
+            except requests.exceptions.RequestException:
+                message_erreur = "impossible to connect with backend"
+                st.error(message_erreur)
+                st.session_state.messages.append({"role": "assistant", "content": message_erreur})

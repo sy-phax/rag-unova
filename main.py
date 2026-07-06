@@ -9,7 +9,7 @@ Created on Thu Jul  2 15:08:53 2026
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from config import DOSSIER_PDF
+from config import DOSSIER_PDF, GITHUB_RAW_BASE
 from ingestion import build_index
 from rag import retrieve, build_prompt, generate
 
@@ -32,7 +32,13 @@ def ask(question: Question):
 
     sources = []
     for m in resultats["metadatas"][0]:
-        if m["source"] not in sources:
-            sources.append(m["source"])
+        url = f"{GITHUB_RAW_BASE}/{m['categorie']}/{m['source']}"
+        entree = {
+            "fichier": m["source"],
+            "page": m["page"],
+            "url": url
+        }
+        if entree not in sources:
+            sources.append(entree)
 
     return {"reponse": reponse, "sources": sources}

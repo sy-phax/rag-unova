@@ -28,29 +28,61 @@ def get_sources_indexees():
     return sources
 
 
+def lister_fichiers_pdf(dossier_pdf):
+    fichiers = []
+    for racine, dossiers, noms_fichiers in os.walk(dossier_pdf):
+        for nom_fichier in noms_fichiers:
+            if nom_fichier.endswith(".pdf"):
+                categorie = os.path.basename(racine)
+                chemin = os.path.join(racine, nom_fichier)
+                fichiers.append({
+                    "nom_fichier": nom_fichier,
+                    "chemin": chemin,
+                    "categorie": categorie
+                })
+
+    return fichiers
+
+
+def nettoyer_sources_orphelines(sources_indexees, fichiers):
+    noms_presents = []
+    for f in fichiers:
+        noms_presents.append(f["nom_fichier"])
+
+    for source in sources_indexees:
+        if source not in noms_presents:
+            supprimer_source(source)
+
+
 def build_index(dossier_pdf):
+    fichiers = lister_fichiers_pdf(dossier_pdf)
+    sources_existantes = get_sources_indexees()
+
+    nettoyer_sources_orphelines(sources_existantes, fichiers)
+
     sources_existantes = get_sources_indexees()
 
     splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
     tous_les_chunks = []
 
-    for nom_fichier in os.listdir(dossier_pdf):
-        if nom_fichier.endswith(".pdf") and nom_fichier not in sources_existantes:
-            chemin = os.path.join(dossier_pdf, nom_fichier)
-            doc = fitz.open(chemin)
+    for f in fichiers:
+        if f["nom_fichier"] not in sources_existantes:
+            doc = fitz.open(f["chemin"])
+            compteur_chunk = 0
 
-            texte_complet = ""
-            for page in doc:
-                texte_complet += page.get_text()
+            for numero_page, page in enumerate(doc, start=1):
+                texte_page = page.get_text()
+                chunks = splitter.split_text(texte_page)
 
-            chunks = splitter.split_text(texte_complet)
-
-            for i, chunk in enumerate(chunks):
-                tous_les_chunks.append({
-                    "texte": chunk,
-                    "source": nom_fichier,
-                    "chunk_id": i
-                })
+                for chunk in chunks:
+                    tous_les_chunks.append({
+                        "texte": chunk,
+                        "source": f["nom_fichier"],
+                        "categorie": f["categorie"],
+                        "page": numero_page,
+                        "chunk_id": compteur_chunk
+                    })
+                    compteur_chunk += 1
 
     if not tous_les_chunks:
         print(f"Aucun nouveau document à indexer (base actuelle : {collection.count()} chunks)")
@@ -68,7 +100,12 @@ def build_index(dossier_pdf):
 
     metadatas = []
     for c in tous_les_chunks:
-        metadatas.append({"source": c["source"], "chunk_id": c["chunk_id"]})
+        metadatas.append({
+            "source": c["source"],
+            "categorie": c["categorie"],
+            "page": c["page"],
+            "chunk_id": c["chunk_id"]
+        })
 
     collection.add(ids=ids, embeddings=embeddings, documents=texts, metadatas=metadatas)
     print(f"{len(tous_les_chunks)} nouveaux chunks indexés (total : {collection.count()})")
